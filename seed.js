@@ -2,30 +2,30 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 const User = require('./models/User');
 
-const seedAdmin = async () => {
+async function seedAdmin() {
     try {
         await mongoose.connect(process.env.MONGODB_URI);
-        console.log('Connected to MongoDB');
+        console.log('Connected to MongoDB...');
 
-        const existingAdmin = await User.findOne({ username: 'admin' });
-        if (existingAdmin) {
-            console.log('Admin account already exists.');
+        const adminExists = await User.findOne({ role: 'admin' });
+        if (adminExists) {
+            console.log('Admin user already exists:', adminExists.username);
         } else {
             const admin = new User({
                 username: 'admin',
-                password: 'adminpassword123', // Khuyến cáo đổi ngay sau khi đăng nhập
+                password: 'adminpassword123',
                 role: 'admin'
             });
             await admin.save();
-            console.log('Admin account created successfully!');
+            console.log('Initial admin user created successfully!');
             console.log('Username: admin');
             console.log('Password: adminpassword123');
         }
-        process.exit(0);
     } catch (err) {
         console.error('Error seeding admin:', err);
-        process.exit(1);
+    } finally {
+        mongoose.disconnect();
     }
-};
+}
 
 seedAdmin();
