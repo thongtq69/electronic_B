@@ -12,33 +12,45 @@ app.use(express.json());
 app.use(cors());
 
 // MongoDB connection management
-let isConnected = false;
+let cachedDb = null;
 const connectDB = async () => {
-    if (isConnected) return;
-    if (!process.env.MONGODB_URI) {
-        console.error('MONGODB_URI is missing');
-        return;
+    if (cachedDb && mongoose.connection.readyState === 1) {
+        return cachedDb;
     }
+
+    if (!process.env.MONGODB_URI) {
+        throw new Error('MONGODB_URI is missing');
+    }
+
+    console.log('Connecting to MongoDB...');
     try {
-        await mongoose.connect(process.env.MONGODB_URI);
-        isConnected = true;
+        const db = await mongoose.connect(process.env.MONGODB_URI, {
+            serverSelectionTimeoutMS: 5000, // Timeout sau 5s nếu không kết nối được
+        });
+        cachedDb = db;
         console.log('Connected to MongoDB');
+        return db;
     } catch (err) {
         console.error('MongoDB connection error:', err);
+        throw err;
     }
 };
 
 // Diagnostic route
 app.get('/api/health', async (req, res) => {
-    await connectDB();
-    res.json({
-        status: 'ok',
-        database: isConnected ? 'connected' : 'disconnected',
-        env: {
-            hasMongo: !!process.env.MONGODB_URI,
-            hasJWT: !!process.env.JWT_SECRET
-        }
-    });
+    try {
+        await connectDB();
+        res.json({
+            status: 'ok',
+            database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+            env: {
+                hasMongo: !!process.env.MONGODB_URI,
+                hasJWT: !!process.env.JWT_SECRET
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ status: 'error', message: err.message });
+    }
 });
 
 // Login Route
