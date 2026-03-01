@@ -81,7 +81,8 @@ app.get('/api/health', async (req, res) => {
             database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
             env: {
                 hasMongo: !!process.env.MONGODB_URI,
-                hasJWT: !!process.env.JWT_SECRET
+                hasJWT: !!process.env.JWT_SECRET,
+                hasAI: !!(process.env.AI_API_KEY || process.env.OPENCODE_API_KEY || process.env.OPENROUTER_API_KEY)
             }
         });
     } catch (err) {
@@ -218,8 +219,8 @@ app.get('/api/calculations', auth, async (req, res) => {
 });
 
 // AI Proxy to bypass CORS
-const AI_API_KEY = process.env.AI_API_KEY;
-const AI_ENDPOINT = "https://opencode.ai/zen/v1/chat/completions";
+const AI_API_KEY = process.env.AI_API_KEY || process.env.OPENCODE_API_KEY || process.env.OPENROUTER_API_KEY;
+const AI_ENDPOINT = process.env.AI_ENDPOINT || 'https://opencode.ai/zen/v1/chat/completions';
 
 function fallbackLegalResponse(query) {
     const q = (query || '').toLowerCase();
@@ -242,6 +243,10 @@ function fallbackLegalResponse(query) {
 app.post('/api/ai/search', async (req, res) => {
     const { query, model = 'kimi-k2.5-free' } = req.body;
 
+    if (!query || String(query).trim().length < 2) {
+        return res.status(400).json({ error: 'Nội dung tra cứu quá ngắn' });
+    }
+
     if (!AI_API_KEY) {
         return res.json({
             content: fallbackLegalResponse(query),
@@ -250,14 +255,18 @@ app.post('/api/ai/search', async (req, res) => {
         });
     }
 
+    let timeout;
     try {
         const fetch = (await import('node-fetch')).default;
+        const controller = new AbortController();
+        timeout = setTimeout(() => controller.abort(), 20000);
         const response = await fetch(AI_ENDPOINT, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${AI_API_KEY}`,
                 'Content-Type': 'application/json'
             },
+            signal: controller.signal,
             body: JSON.stringify({
                 model: model,
                 messages: [
@@ -281,14 +290,16 @@ app.post('/api/ai/search', async (req, res) => {
         });
 
         const data = await response.json();
+        const content = data?.choices?.[0]?.message?.content || data?.output_text || '';
 
-        if (response.ok && data.choices && data.choices[0]) {
-            res.json({ content: data.choices[0].message.content });
+        if (response.ok && content) {
+            res.json({ content, fallback: false });
         } else {
             res.json({
                 content: fallbackLegalResponse(query),
                 fallback: true,
                 reason: 'upstream_error',
+                upstreamStatus: response.status,
                 details: data
             });
         }
@@ -300,6 +311,10 @@ app.post('/api/ai/search', async (req, res) => {
             reason: 'network_error',
             message: error.message
         });
+    } finally {
+        if (timeout) {
+            clearTimeout(timeout);
+        }
     }
 });
 
