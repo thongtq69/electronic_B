@@ -77,6 +77,7 @@ app.get('/api/health', async (req, res) => {
         await connectDB();
         res.json({
             status: 'ok',
+            apiVersion: '2026-03-02.1',
             database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
             env: {
                 hasMongo: !!process.env.MONGODB_URI,
