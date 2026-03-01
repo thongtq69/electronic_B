@@ -295,11 +295,14 @@ app.post('/api/ai/search', async (req, res) => {
         if (response.ok && content) {
             res.json({ content, fallback: false });
         } else {
+            const upstreamMessage = data?.error?.message || data?.message || '';
+            const isInvalidKey = response.status === 401 || response.status === 403 || /invalid api key|unauthorized|invalid token/i.test(upstreamMessage);
             res.json({
                 content: fallbackLegalResponse(query),
                 fallback: true,
-                reason: 'upstream_error',
+                reason: isInvalidKey ? 'invalid_api_key' : 'upstream_error',
                 upstreamStatus: response.status,
+                upstreamMessage,
                 details: data
             });
         }
